@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>AR Sonia – Marcador Hiro</title>
+
+  <!-- ══════════════════════════════════════════
+       LIBRERÍAS: A-Frame 1.5 + AR.js
+       ══════════════════════════════════════════ -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  <!-- aframe-extras: para animation-mixer (anima el modelo glTF interno) -->
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #000; overflow: hidden; }
+
+    /* ── HUD inferior ── */
+    #hud {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+      padding: 16px 20px 24px;
+      background: linear-gradient(to top, rgba(10,10,30,0.88) 55%, transparent);
+      color: #fff; display: flex; flex-direction: column;
+      align-items: center; gap: 7px; pointer-events: none;
+      transition: opacity 0.6s ease;
+    }
+    #hud .badge {
+      font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+      color: #a78bfa; font-weight: 800;
+    }
+    #hud .instruction {
+      font-size: 15px; text-align: center; line-height: 1.55;
+      color: rgba(255,255,255,0.9);
+    }
+    #hud .marker-hint {
+      display: flex; align-items: center; gap: 9px;
+      margin-top: 3px; font-size: 13px; color: #c4b5fd;
+    }
+    .hiro-icon {
+      width: 38px; height: 38px; border: 2px solid #a78bfa;
+      border-radius: 5px; padding: 2px; background: #fff; flex-shrink: 0;
+    }
+
+    /* ── Punto de estado ── */
+    #status-dot {
+      position: fixed; top: 18px; right: 18px; z-index: 9999;
+      width: 13px; height: 13px; border-radius: 50%;
+      background: #f87171; animation: pulse-red 1.8s infinite;
+      transition: background 0.4s;
+    }
+    #status-dot.found {
+      background: #4ade80; animation: pulse-green 1.8s infinite;
+    }
+    @keyframes pulse-red {
+      0%   { box-shadow: 0 0 0 0   rgba(248,113,113,0.65); }
+      70%  { box-shadow: 0 0 0 9px rgba(248,113,113,0);    }
+      100% { box-shadow: 0 0 0 0   rgba(248,113,113,0);    }
+    }
+    @keyframes pulse-green {
+      0%   { box-shadow: 0 0 0 0   rgba(74,222,128,0.65); }
+      70%  { box-shadow: 0 0 0 9px rgba(74,222,128,0);    }
+      100% { box-shadow: 0 0 0 0   rgba(74,222,128,0);    }
+    }
+
+    /* ── Banner "modelo cargando" ── */
+    #loading-banner {
+      position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 9999; background: rgba(0,0,0,0.72); color: #a78bfa;
+      padding: 7px 18px; border-radius: 20px; font-size: 13px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      pointer-events: none; transition: opacity 0.5s ease;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="status-dot"></div>
+  <div id="loading-banner">⏳ Cargando modelo 3D…</div>
+
+  <!-- ══════════════════════════════════════════
+       HUD – instrucciones
+       ══════════════════════════════════════════ -->
+  <div id="hud">
+    <span class="badge">✦ Realidad Aumentada · Sonia Gordillo ✦</span>
+    <p class="instruction">Apunta la cámara al marcador <strong>Hiro</strong><br>y aparecerá una zorrita 🦊</p>
+    <div class="marker-hint">
+      <svg class="hiro-icon" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+        <rect width="60" height="60" fill="#fff"/>
+        <rect x="6"  y="6"  width="48" height="48" fill="#000"/>
+        <rect x="12" y="12" width="36" height="36" fill="#fff"/>
+        <rect x="18" y="18" width="24" height="24" fill="#000"/>
+        <rect x="24" y="24" width="12" height="12" fill="#fff"/>
+      </svg>
+      <span>Busca "hiro marker AR.js" en Google e imprímelo</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       ESCENA AR
+       ══════════════════════════════════════════ -->
+  <a-scene
+    embedded
+    arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+    vr-mode-ui="enabled: false"
+    renderer="logarithmicDepthBuffer: true; precision: medium;"
+    loading-screen="enabled: false"
+  >
+
+    <!-- ── Assets ── -->
+    <a-assets timeout="60000">
+      <!--
+        Modelo: Fox (zorro) de three.js examples
+        CDN jsdelivr tiene CORS abierto (Access-Control-Allow-Origin: *)
+        Licencia: CC0 / MIT
+      -->
+      <a-asset-item
+        id="fox-model"
+        src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Fox/glTF/Fox.gltf">
+      </a-asset-item>
+    </a-assets>
+
+    <!-- ══════════════════════════════════════════
+         MARCADOR HIRO
+         ══════════════════════════════════════════ -->
+    <a-marker type="pattern" preset="hiro" id="hiro-marker">
+
+      <!-- 1. Modelo 3D: el zorro -->
+      <a-entity
+        id="el-zorro"
+        gltf-model="#fox-model"
+        position="0 0 0"
+        rotation="0 0 0"
+        scale="0.012 0.012 0.012"
+        animation-mixer="clip: Survey; loop: repeat; crossFadeDuration: 0.3"
+        animation="
+          property: rotation;
+          from: 0 0 0;
+          to: 0 360 0;
+          loop: true;
+          dur: 3000;
+          easing: linear
+        "
+      ></a-entity>
+
+      <!-- 2. Luces para iluminar bien el modelo -->
+      <!-- Luz ambiental suave (ilumina todo por igual) -->
+      <a-light type="ambient" color="#e0d0ff" intensity="0.7"></a-light>
+      <!-- Luz direccional principal (simula el sol, da volumen) -->
+      <a-light
+        type="directional"
+        color="#ffffff"
+        intensity="1.6"
+        position="1 3 2"
+      ></a-light>
+      <!-- Luz de relleno desde abajo-atrás (evita sombras duras) -->
+      <a-light
+        type="directional"
+        color="#ffd580"
+        intensity="0.5"
+        position="-1 -1 -1"
+      ></a-light>
+
+      <!-- 3. Texto flotante con el nombre -->
+      <a-text
+        value="✨ Sonia Gordillo ✨"
+        align="center"
+        color="#ffffff"
+        width="3"
+        position="0 2.4 0"
+        rotation="0 0 0"
+        font="https://cdn.aframe.io/fonts/Exo2Bold.fnt"
+        shader="msdf"
+        negate="false"
+        animation="
+          property: position;
+          from: 0 2.4 0;
+          to: 0 2.65 0;
+          loop: true;
+          dur: 1400;
+          dir: alternate;
+          easing: easeInOutSine
+        "
+      ></a-text>
+
+      <!-- Sombra debajo del zorro -->
+      <a-circle
+        radius="0.7"
+        rotation="-90 0 0"
+        position="0 0.002 0"
+        color="#200040"
+        opacity="0.22"
+        material="shader: flat"
+      ></a-circle>
+
+    </a-marker>
+
+    <a-entity camera></a-entity>
+
+  </a-scene>
+
+  <!-- ══════════════════════════════════════════
+       JAVASCRIPT – eventos
+       ══════════════════════════════════════════ -->
+  <script>
+    const marker  = document.getElementById('hiro-marker');
+    const dot     = document.getElementById('status-dot');
+    const hud     = document.getElementById('hud');
+    const banner  = document.getElementById('loading-banner');
+
+    // Cuando el modelo termina de cargar, ocultamos el banner
+    const foxAsset = document.getElementById('fox-model');
+    foxAsset.addEventListener('loaded', () => {
+      banner.style.opacity = '0';
+      setTimeout(() => banner.style.display = 'none', 600);
+    });
+    // Si tarda más de 20 s también lo ocultamos
+    setTimeout(() => { banner.style.opacity = '0'; }, 20000);
+
+    marker.addEventListener('markerFound', () => {
+      dot.classList.add('found');
+      hud.style.opacity = '0';
+    });
+    marker.addEventListener('markerLost', () => {
+      dot.classList.remove('found');
+      hud.style.opacity = '1';
+    });
+  </script>
+
+</body>
+</html>
